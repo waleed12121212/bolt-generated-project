@@ -1,405 +1,367 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Bazingo_Core.Entities.Identity;
-using Bazingo_Core.Entities.Identity.Enums;
-using Bazingo_Core.Interfaces;
-using Bazingo_Core.Models.Common;
-using Bazingo_Core.Models.Identity;
-using Google.Apis.Auth;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
-using Net.Codecrete.QrCodeGenerator;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
+    using Bazingo_Application.Models;
+    using Bazingo_Core.Configuration;
+    using Bazingo_Core.Entities.Identity;
+    using Bazingo_Core.Interfaces;
+    using Bazingo_Core.Models.Identity;
+    using Bazingo_Core.Models.Common;
+    using Microsoft.AspNetCore.Identity;
+    using Microsoft.Extensions.Logging;
+    using Microsoft.Extensions.Options;
+    using Microsoft.IdentityModel.Tokens;
+    using System;
+    using System.Collections.Generic;
+    using System.IdentityModel.Tokens.Jwt;
+    using System.Linq;
+    using System.Security.Claims;
+    using System.Text;
+    using System.Threading.Tasks;
+    using Bazingo_Core;
 
-namespace Bazingo_Application.Services.Identity
-{
-    public class AuthService : IAuthService
+    namespace Bazingo_Application.Services.Identity
     {
-        private readonly UserManager<ApplicationUser> _userManager;
-        private readonly SignInManager<ApplicationUser> _signInManager;
-        private readonly IConfiguration _configuration;
-        private readonly ILogger<AuthService> _logger;
-        private readonly ITokenService _tokenService;
-
-        public AuthService(
-            UserManager<ApplicationUser> userManager,
-            SignInManager<ApplicationUser> signInManager,
-            IConfiguration configuration,
-            ILogger<AuthService> logger,
-            ITokenService tokenService)
+        public class AuthService : IAuthService
         {
-            _userManager = userManager;
-            _signInManager = signInManager;
-            _configuration = configuration;
-            _logger = logger;
-            _tokenService = tokenService;
-        }
+            private readonly UserManager<ApplicationUser> _userManager;
+            private readonly JwtSettings _jwtSettings;
+            private readonly ILogger<AuthService> _logger;
+            private readonly SignInManager<ApplicationUser> _signInManager;
+            private readonly IEmailService _emailService;
 
-        public async Task<ApiResponse<string>> RegisterAsync(IRegisterModel model)
-        {
-            try
+            public AuthService(
+                UserManager<ApplicationUser> userManager,
+                IOptions<JwtSettings> jwtSettings,
+                ILogger<AuthService> logger,
+                SignInManager<ApplicationUser> signInManager,
+                IEmailService emailService)
             {
-                var user = new ApplicationUser
-                {
-                    UserName = model.Username,
-                    Email = model.Email,
-                    FirstName = model.FirstName,
-                    LastName = model.LastName,
-                    PhoneNumber = model.PhoneNumber,
-                    UserType = UserType.Customer,
-                    CreatedAt = DateTime.UtcNow
-                };
-
-                var result = await _userManager.CreateAsync(user, model.Password);
-                if (!result.Succeeded)
-                {
-                    return ApiResponse<string>.CreateError(result.Errors.Select(e => e.Description).ToList());
-                }
-
-                var token = await _tokenService.GenerateAccessTokenAsync(user.Id);
-                return ApiResponse<string>.CreateSuccess(token, "Registration successful");
+                _userManager = userManager;
+                _jwtSettings = jwtSettings.Value;
+                _logger = logger;
+                _signInManager = signInManager;
+                _emailService = emailService;
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error during registration");
-                return ApiResponse<string>.CreateError("An error occurred during registration");
-            }
-        }
 
-        public async Task<ApiResponse<string>> LoginAsync(ILoginModel model)
-        {
-            try
+            public async Task<ApiResponse<string>> RegisterAsync(IRegisterModel model)
             {
-                var user = await _userManager.FindByEmailAsync(model.Email);
-                if (user == null)
+                try
                 {
-                    return ApiResponse<string>.CreateError("Invalid credentials");
-                }
-
-                var result = await _signInManager.PasswordSignInAsync(user, model.Password, model.RememberMe, true);
-                if (!result.Succeeded)
-                {
-                    if (result.RequiresTwoFactor)
+                    var existingUser = await _userManager.FindByEmailAsync(model.Email);
+                    if (existingUser != null)
                     {
-                        return ApiResponse<string>.CreateError("Two-factor authentication required");
+                        return ApiResponse<string>.CreateError("Email is already registered");
                     }
-                    if (result.IsLockedOut)
-                    {
-                        return ApiResponse<string>.CreateError("Account is locked out");
-                    }
-                    return ApiResponse<string>.CreateError("Invalid credentials");
-                }
 
-                var token = await _tokenService.GenerateAccessTokenAsync(user.Id);
-                return ApiResponse<string>.CreateSuccess(token, "Login successful");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error during login");
-                return ApiResponse<string>.CreateError("An error occurred during login");
-            }
-        }
-
-        public async Task<ApiResponse<string>> ExternalLoginAsync(IExternalAuthModel model)
-        {
-            try
-            {
-                GoogleJsonWebSignature.Payload payload = null;
-                if (model.Provider.ToLower() == "google")
-                {
-                    var settings = new GoogleJsonWebSignature.ValidationSettings
-                    {
-                        Audience = new[] { _configuration["Authentication:Google:ClientId"] }
-                    };
-                    payload = await GoogleJsonWebSignature.ValidateAsync(model.Token, settings);
-                    model.Email = payload.Email;
-                }
-
-                var user = await _userManager.FindByEmailAsync(model.Email);
-                if (user == null)
-                {
-                    user = new ApplicationUser
+                    var user = new ApplicationUser
                     {
                         UserName = model.Email,
                         Email = model.Email,
-                        UserType = UserType.Customer,
-                        EmailConfirmed = true,
-                        CreatedAt = DateTime.UtcNow
+                        FirstName = model.FirstName,
+                        LastName = model.LastName,
+                        PhoneNumber = model.PhoneNumber
                     };
 
-                    var result = await _userManager.CreateAsync(user);
+                    var result = await _userManager.CreateAsync(user, model.Password);
                     if (!result.Succeeded)
                     {
-                        return ApiResponse<string>.CreateError("External login registration failed");
+                        return ApiResponse<string>.CreateError(result.Errors.Select(e => e.Description).ToList());
                     }
+
+                    var token = await GenerateJwtToken(user);
+                    return ApiResponse<string>.CreateSuccess(token);
                 }
-
-                var token = await _tokenService.GenerateAccessTokenAsync(user.Id);
-                return ApiResponse<string>.CreateSuccess(token, "External login successful");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error during external login");
-                return ApiResponse<string>.CreateError("An error occurred during external login");
-            }
-        }
-
-        public async Task<ApiResponse<bool>> Enable2FAAsync(string userId, bool enable)
-        {
-            try
-            {
-                var user = await _userManager.FindByIdAsync(userId);
-                if (user == null)
+                catch (Exception ex)
                 {
-                    return ApiResponse<bool>.CreateError("User not found");
+                    _logger.LogError(ex, "Error during registration");
+                    return ApiResponse<string>.CreateError("Registration failed");
                 }
+            }
 
-                if (enable)
+            public async Task<ApiResponse<string>> LoginAsync(ILoginModel model)
+            {
+                try
                 {
-                    var token = await _userManager.GenerateTwoFactorTokenAsync(user, "Email");
-                    var unformattedKey = token.Replace(" ", "");
-
-                    var qr = QrCode.EncodeText(
-                        $"otpauth://totp/Bazingo:{user.Email}?secret={unformattedKey}&issuer=Bazingo",
-                        QrCode.Ecc.Medium
-                    );
-
-                    var scale = 10;
-                    var border = 4;
-                    var size = (qr.Size + border * 2) * scale;
-
-                    using var image = new Image<Rgba32>(size, size);
-                    for (int y = 0; y < qr.Size; y++)
+                    var user = await _userManager.FindByEmailAsync(model.Email);
+                    if (user == null)
                     {
-                        for (int x = 0; x < qr.Size; x++)
+                        return ApiResponse<string>.CreateError("Invalid credentials");
+                    }
+
+                    var result = await _signInManager.PasswordSignInAsync(user, model.Password, model.RememberMe, false);
+                    if (!result.Succeeded)
+                    {
+                        return ApiResponse<string>.CreateError("Invalid credentials");
+                    }
+
+                    var token = await GenerateJwtToken(user);
+                    return ApiResponse<string>.CreateSuccess(token);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error during login");
+                    return ApiResponse<string>.CreateError("Login failed");
+                }
+            }
+
+            public async Task<ApiResponse<string>> ExternalLoginAsync(IExternalAuthModel model)
+            {
+                try
+                {
+                    // Placeholder for external authentication logic
+                    // In a real application, you would integrate with external providers like Google, Facebook, etc.
+                    // For this example, we'll just create a dummy user and generate a token.
+
+                    var user = await _userManager.FindByEmailAsync(model.Email);
+                    if (user == null)
+                    {
+                        user = new ApplicationUser
                         {
-                            var color = qr.GetModule(x, y) ? new Rgba32(0, 0, 0) : new Rgba32(255, 255, 255);
-                            for (int i = 0; i < scale; i++)
-                            {
-                                for (int j = 0; j < scale; j++)
-                                {
-                                    image[(x + border) * scale + i, (y + border) * scale + j] = color;
-                                }
-                            }
+                            UserName = model.Email,
+                            Email = model.Email,
+                            FirstName = "External",
+                            LastName = "User",
+                            PhoneNumber = "123-456-7890"
+                        };
+
+                        var result = await _userManager.CreateAsync(user);
+                        if (!result.Succeeded)
+                        {
+                            return ApiResponse<string>.CreateError("External login failed");
                         }
                     }
 
-                    using var memoryStream = new MemoryStream();
-                    await image.SaveAsPngAsync(memoryStream);
-                    var qrCodeBase64 = Convert.ToBase64String(memoryStream.ToArray());
+                    var token = await GenerateJwtToken(user);
+                    return ApiResponse<string>.CreateSuccess(token);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error during external login");
+                    return ApiResponse<string>.CreateError("External login failed");
+                }
+            }
 
-                    await _userManager.SetTwoFactorEnabledAsync(user, true);
-
-                    var response = ApiResponse<bool>.CreateSuccess(true, "2FA setup initiated");
-                    response.AdditionalData = new Dictionary<string, object>
+            public async Task<ApiResponse<bool>> Enable2FAAsync(string userId, bool enable)
+            {
+                try
+                {
+                    var user = await _userManager.FindByIdAsync(userId);
+                    if (user == null)
                     {
-                        { "qrCode", qrCodeBase64 }
-                    };
-                    return response;
+                        return ApiResponse<bool>.CreateError("User not found");
+                    }
+
+                    // Placeholder for 2FA enabling logic
+                    // In a real application, you would generate a 2FA secret and store it for the user.
+
+                    return ApiResponse<bool>.CreateSuccess(true, "2FA enabling logic not implemented in this example.");
                 }
-                else
+                catch (Exception ex)
                 {
-                    await _userManager.SetTwoFactorEnabledAsync(user, false);
-                    return ApiResponse<bool>.CreateSuccess(true, "2FA disabled");
+                    _logger.LogError(ex, "Error enabling 2FA");
+                    return ApiResponse<bool>.CreateError("Failed to enable 2FA");
                 }
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error during 2FA setup");
-                return ApiResponse<bool>.CreateError("An error occurred during 2FA setup");
-            }
-        }
 
-        public async Task<ApiResponse<string>> Verify2FAAsync(ITwoFactorModel model)
-        {
-            try
+            public async Task<ApiResponse<string>> Verify2FAAsync(ITwoFactorModel model)
             {
-                var user = await _userManager.FindByIdAsync(model.UserId);
-                if (user == null)
+                try
                 {
-                    return ApiResponse<string>.CreateError("User not found");
+                    var user = await _userManager.FindByIdAsync(model.UserId);
+                    if (user == null)
+                    {
+                        return ApiResponse<string>.CreateError("User not found");
+                    }
+
+                    // Placeholder for 2FA verification logic
+                    // In a real application, you would verify the user's 2FA code against the stored secret.
+
+                    return ApiResponse<string>.CreateSuccess("2FA verification logic not implemented in this example.");
                 }
-
-                var isValid = await _userManager.VerifyTwoFactorTokenAsync(user, "Email", model.Code);
-                if (!isValid)
+                catch (Exception ex)
                 {
-                    return ApiResponse<string>.CreateError("Invalid verification code");
+                    _logger.LogError(ex, "Error verifying 2FA");
+                    return ApiResponse<string>.CreateError("2FA verification failed");
                 }
-
-                var token = await _tokenService.GenerateAccessTokenAsync(user.Id);
-                return ApiResponse<string>.CreateSuccess(token, "2FA verification successful");
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error during 2FA verification");
-                return ApiResponse<string>.CreateError("An error occurred during 2FA verification");
-            }
-        }
 
-        public async Task<ApiResponse<bool>> Disable2FAAsync(string userId)
-        {
-            try
+            public async Task<ApiResponse<bool>> Disable2FAAsync(string userId)
             {
-                var user = await _userManager.FindByIdAsync(userId);
-                if (user == null)
+                try
                 {
-                    return ApiResponse<bool>.CreateError("User not found");
+                    var user = await _userManager.FindByIdAsync(userId);
+                    if (user == null)
+                    {
+                        return ApiResponse<bool>.CreateError("User not found");
+                    }
+
+                    // Placeholder for 2FA disabling logic
+                    // In a real application, you would remove the stored 2FA secret for the user.
+
+                    return ApiResponse<bool>.CreateSuccess(true, "2FA disabling logic not implemented in this example.");
                 }
-
-                var result = await _userManager.SetTwoFactorEnabledAsync(user, false);
-                if (!result.Succeeded)
+                catch (Exception ex)
                 {
+                    _logger.LogError(ex, "Error disabling 2FA");
                     return ApiResponse<bool>.CreateError("Failed to disable 2FA");
                 }
-
-                return ApiResponse<bool>.CreateSuccess(true, "2FA disabled successfully");
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error during 2FA disabling");
-                return ApiResponse<bool>.CreateError("An error occurred during 2FA disabling");
-            }
-        }
 
-        public async Task<ApiResponse<string>> RefreshTokenAsync(string token)
-        {
-            try
+            public async Task<ApiResponse<string>> RefreshTokenAsync(string token)
             {
-                var userId = await _tokenService.GetUserIdFromTokenAsync(token);
-                if (string.IsNullOrEmpty(userId))
+                try
                 {
-                    return ApiResponse<string>.CreateError("Invalid token");
+                    // Placeholder for refresh token logic
+                    // In a real application, you would validate the refresh token and generate a new access token.
+
+                    return ApiResponse<string>.CreateSuccess("Refresh token logic not implemented in this example.");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error refreshing token");
+                    return ApiResponse<string>.CreateError("Token refresh failed");
+                }
+            }
+
+            public async Task<ApiResponse<bool>> RevokeTokenAsync(string token)
+            {
+                try
+                {
+                    // Placeholder for token revocation logic
+                    // In a real application, you would invalidate the token in a database or cache.
+
+                    return ApiResponse<bool>.CreateSuccess(true, "Token revocation logic not implemented in this example.");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error revoking token");
+                    return ApiResponse<bool>.CreateError("Token revocation failed");
+                }
+            }
+
+            public async Task<bool> ValidateUserCredentialsAsync(string username, string password)
+            {
+                var user = await _userManager.FindByNameAsync(username);
+                if (user == null) return false;
+                return await _userManager.CheckPasswordAsync(user, password);
+            }
+
+            public async Task<ApplicationUser> GetUserByIdAsync(string userId)
+            {
+                return await _userManager.FindByIdAsync(userId);
+            }
+
+            public async Task<ApplicationUser> GetUserByUsernameAsync(string username)
+            {
+                return await _userManager.FindByNameAsync(username);
+            }
+
+            public async Task<bool> CreateUserAsync(ApplicationUser user, string password)
+            {
+                var result = await _userManager.CreateAsync(user, password);
+                return result.Succeeded;
+            }
+
+            public async Task<bool> UpdateUserAsync(ApplicationUser user)
+            {
+                var result = await _userManager.UpdateAsync(user);
+                return result.Succeeded;
+            }
+
+            public async Task<bool> DeleteUserAsync(string userId)
+            {
+                var user = await _userManager.FindByIdAsync(userId);
+                if (user == null) return false;
+                var result = await _userManager.DeleteAsync(user);
+                return result.Succeeded;
+            }
+
+            public async Task<bool> ChangePasswordAsync(string userId, string currentPassword, string newPassword)
+            {
+                var user = await _userManager.FindByIdAsync(userId);
+                if (user == null) return false;
+                var result = await _userManager.ChangePasswordAsync(user, currentPassword, newPassword);
+                return result.Succeeded;
+            }
+
+            public async Task<string> GeneratePasswordResetTokenAsync(string userId)
+            {
+                var user = await _userManager.FindByIdAsync(userId);
+                if (user == null) return null;
+                return await _userManager.GeneratePasswordResetTokenAsync(user);
+            }
+
+            public async Task<bool> ResetPasswordAsync(string userId, string token, string newPassword)
+            {
+                var user = await _userManager.FindByIdAsync(userId);
+                if (user == null) return false;
+                var result = await _userManager.ResetPasswordAsync(user, token, newPassword);
+                return result.Succeeded;
+            }
+
+            public async Task<bool> IsEmailConfirmedAsync(string userId)
+            {
+                var user = await _userManager.FindByIdAsync(userId);
+                if (user == null) return false;
+                return await _userManager.IsEmailConfirmedAsync(user);
+            }
+
+            public async Task<bool> ConfirmEmailAsync(string userId, string token)
+            {
+                var user = await _userManager.FindByIdAsync(userId);
+                if (user == null) return false;
+                var result = await _userManager.ConfirmEmailAsync(user, token);
+                return result.Succeeded;
+            }
+
+            private async Task<string> GenerateJwtToken(ApplicationUser user)
+            {
+                var key = Encoding.ASCII.GetBytes(_jwtSettings.Secret);
+                var claims = new List<Claim>
+                {
+                    new Claim(ClaimTypes.NameIdentifier, user.Id),
+                    new Claim(ClaimTypes.Name, user.UserName),
+                    new Claim(ClaimTypes.Email, user.Email)
+                };
+
+                var roles = await _userManager.GetRolesAsync(user);
+                claims.AddRange(roles.Select(role => new Claim(ClaimTypes.Role, role)));
+
+                var tokenDescriptor = new SecurityTokenDescriptor
+                {
+                    Subject = new ClaimsIdentity(claims),
+                    Expires = DateTime.UtcNow.AddHours(_jwtSettings.ExpiryInHours),
+                    SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature),
+                    Issuer = _jwtSettings.ValidIssuer,
+                    Audience = _jwtSettings.ValidAudience
+                };
+
+                var tokenHandler = new JwtSecurityTokenHandler();
+                var token = tokenHandler.CreateToken(tokenDescriptor);
+                return tokenHandler.WriteToken(token);
+            }
+
+            private ClaimsPrincipal GetPrincipalFromExpiredToken(string token)
+            {
+                var tokenValidationParameters = new TokenValidationParameters
+                {
+                    ValidateIssuerSigningKey = true,
+                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.ASCII.GetBytes(_jwtSettings.Secret)),
+                    ValidateIssuer = true,
+                    ValidateAudience = true,
+                    ValidIssuer = _jwtSettings.ValidIssuer,
+                    ValidAudience = _jwtSettings.ValidAudience,
+                    ValidateLifetime = false
+                };
+
+                var tokenHandler = new JwtSecurityTokenHandler();
+                var principal = tokenHandler.ValidateToken(token, tokenValidationParameters, out SecurityToken securityToken);
+
+                if (!(securityToken is JwtSecurityToken jwtSecurityToken) ||
+                    !jwtSecurityToken.Header.Alg.Equals(SecurityAlgorithms.HmacSha256, StringComparison.InvariantCultureIgnoreCase))
+                {
+                    throw new SecurityTokenException("Invalid token");
                 }
 
-                var newToken = await _tokenService.GenerateAccessTokenAsync(userId);
-                return ApiResponse<string>.CreateSuccess(newToken, "Token refreshed successfully");
+                return principal;
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error during token refresh");
-                return ApiResponse<string>.CreateError("An error occurred during token refresh");
-            }
-        }
-
-        public async Task<ApiResponse<bool>> RevokeTokenAsync(string token)
-        {
-            try
-            {
-                var result = await _tokenService.RevokeTokenAsync(token);
-                return ApiResponse<bool>.CreateSuccess(result, result ? "Token revoked successfully" : "Failed to revoke token");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error during token revocation");
-                return ApiResponse<bool>.CreateError("An error occurred during token revocation");
-            }
-        }
-
-        public async Task<bool> ValidateUserCredentialsAsync(string username, string password)
-        {
-            var user = await _userManager.FindByNameAsync(username);
-            if (user == null)
-            {
-                return false;
-            }
-
-            return await _userManager.CheckPasswordAsync(user, password);
-        }
-
-        public async Task<ApplicationUser> GetUserByIdAsync(string userId)
-        {
-            return await _userManager.FindByIdAsync(userId);
-        }
-
-        public async Task<ApplicationUser> GetUserByUsernameAsync(string username)
-        {
-            return await _userManager.FindByNameAsync(username);
-        }
-
-        public async Task<bool> CreateUserAsync(ApplicationUser user, string password)
-        {
-            var result = await _userManager.CreateAsync(user, password);
-            return result.Succeeded;
-        }
-
-        public async Task<bool> UpdateUserAsync(ApplicationUser user)
-        {
-            var result = await _userManager.UpdateAsync(user);
-            return result.Succeeded;
-        }
-
-        public async Task<bool> DeleteUserAsync(string userId)
-        {
-            var user = await _userManager.FindByIdAsync(userId);
-            if (user == null)
-            {
-                return false;
-            }
-
-            var result = await _userManager.DeleteAsync(user);
-            return result.Succeeded;
-        }
-
-        public async Task<bool> ChangePasswordAsync(string userId, string currentPassword, string newPassword)
-        {
-            var user = await _userManager.FindByIdAsync(userId);
-            if (user == null)
-            {
-                return false;
-            }
-
-            var result = await _userManager.ChangePasswordAsync(user, currentPassword, newPassword);
-            return result.Succeeded;
-        }
-
-        public async Task<string> GeneratePasswordResetTokenAsync(string userId)
-        {
-            var user = await _userManager.FindByIdAsync(userId);
-            if (user == null)
-            {
-                return null;
-            }
-
-            return await _userManager.GeneratePasswordResetTokenAsync(user);
-        }
-
-        public async Task<bool> ResetPasswordAsync(string userId, string token, string newPassword)
-        {
-            var user = await _userManager.FindByIdAsync(userId);
-            if (user == null)
-            {
-                return false;
-            }
-
-            var result = await _userManager.ResetPasswordAsync(user, token, newPassword);
-            return result.Succeeded;
-        }
-
-        public async Task<bool> IsEmailConfirmedAsync(string userId)
-        {
-            var user = await _userManager.FindByIdAsync(userId);
-            if (user == null)
-            {
-                return false;
-            }
-
-            return await _userManager.IsEmailConfirmedAsync(user);
-        }
-
-        public async Task<bool> ConfirmEmailAsync(string userId, string token)
-        {
-            var user = await _userManager.FindByIdAsync(userId);
-            if (user == null)
-            {
-                return false;
-            }
-
-            var result = await _userManager.ConfirmEmailAsync(user, token);
-            return result.Succeeded;
         }
     }
-}

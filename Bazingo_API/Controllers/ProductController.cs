@@ -1,79 +1,80 @@
-using Bazingo_Application.DTOs.Product;
-using Bazingo_Application.Interfaces;
-using Bazingo_Core.Models.Common;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Mvc;
+    using Bazingo_Application.DTOs.Product;
+    using Bazingo_Application.Interfaces;
+    using Bazingo_Core.Models.Common;
+    using Microsoft.AspNetCore.Authorization;
+    using Microsoft.AspNetCore.Mvc;
+    using Bazingo_Core;
 
-namespace Bazingo_API.Controllers
-{
-    public class ProductController : BaseController
+    namespace Bazingo_API.Controllers
     {
-        private readonly IProductService _productService;
-        private readonly ILogger<ProductController> _logger;
-
-        public ProductController(IProductService productService, ILogger<ProductController> logger)
+        public class ProductController : BaseController
         {
-            _productService = productService;
-            _logger = logger;
-        }
+            private readonly IProductService _productService;
+            private readonly ILogger<ProductController> _logger;
 
-        [HttpGet]
-        public async Task<ActionResult<ApiResponse<IEnumerable<ProductDto>>>> GetAllProducts()
-        {
-            return await _productService.GetAllProductsAsync();
-        }
+            public ProductController(IProductService productService, ILogger<ProductController> logger)
+            {
+                _productService = productService;
+                _logger = logger;
+            }
 
-        [HttpGet("{id}")]
-        public async Task<ActionResult<ApiResponse<ProductDto>>> GetProduct(int id)
-        {
-            return await _productService.GetProductByIdAsync(id);
-        }
+            [HttpGet]
+            public async Task<ActionResult<ApiResponse<IEnumerable<ProductDto>>>> GetAllProducts()
+            {
+                return await _productService.GetAllProductsAsync();
+            }
 
-        [HttpGet("category/{categoryId}")]
-        public async Task<ActionResult<ApiResponse<IEnumerable<ProductDto>>>> GetProductsByCategory(int categoryId)
-        {
-            return await _productService.GetProductsByCategoryAsync(categoryId);
-        }
+            [HttpGet("{id}")]
+            public async Task<ActionResult<ApiResponse<ProductDto>>> GetProduct(int id)
+            {
+                return await _productService.GetProductByIdAsync(id);
+            }
 
-        [HttpGet("seller/{sellerId}")]
-        public async Task<ActionResult<ApiResponse<IEnumerable<ProductDto>>>> GetProductsBySeller(string sellerId)
-        {
-            return await _productService.GetProductsBySellerAsync(sellerId);
-        }
+            [HttpGet("category/{categoryId}")]
+            public async Task<ActionResult<ApiResponse<IEnumerable<ProductDto>>>> GetProductsByCategory(int categoryId)
+            {
+                return await _productService.GetProductsByCategoryAsync(categoryId);
+            }
 
-        [HttpGet("search")]
-        public async Task<ActionResult<ApiResponse<IEnumerable<ProductDto>>>> SearchProducts([FromQuery] string searchTerm)
-        {
-            return await _productService.SearchProductsAsync(searchTerm);
-        }
+            [HttpGet("seller/{sellerId}")]
+            public async Task<ActionResult<ApiResponse<IEnumerable<ProductDto>>>> GetProductsBySeller(string sellerId)
+            {
+                return await _productService.GetProductsBySellerAsync(sellerId);
+            }
 
-        [HttpPost]
-        [Authorize(Roles = "Seller")]
-        public async Task<ActionResult<ApiResponse<ProductDto>>> CreateProduct([FromBody] CreateProductDto dto)
-        {
-            var sellerId = User.FindFirst("sub")?.Value;
-            return await _productService.CreateProductAsync(dto, sellerId);
-        }
+            [HttpGet("search")]
+            public async Task<ActionResult<ApiResponse<IEnumerable<ProductDto>>>> SearchProducts([FromQuery] string searchTerm)
+            {
+                return await _productService.SearchProductsAsync(searchTerm);
+            }
 
-        [HttpPut("{id}")]
-        [Authorize(Roles = "Seller")]
-        public async Task<ActionResult<ApiResponse<ProductDto>>> UpdateProduct(int id, [FromBody] UpdateProductDto dto)
-        {
-            return await _productService.UpdateProductAsync(id, dto);
-        }
+            [HttpPost]
+            [Authorize(Roles = Constants.Roles.Seller)]
+            public async Task<ActionResult<ApiResponse<ProductDto>>> CreateProduct([FromBody] CreateProductDto dto)
+            {
+                var sellerId = User.FindFirst("sub")?.Value;
+                return await _productService.CreateProductAsync(dto, sellerId);
+            }
 
-        [HttpDelete("{id}")]
-        [Authorize(Roles = "Seller")]
-        public async Task<ActionResult<ApiResponse<bool>>> DeleteProduct(int id)
-        {
-            return await _productService.DeleteProductAsync(id);
-        }
+            [HttpPut("{id}")]
+            [Authorize(Roles = Constants.Roles.Seller)]
+            public async Task<ActionResult<ApiResponse<ProductDto>>> UpdateProduct(int id, [FromBody] UpdateProductDto dto)
+            {
+                return await _productService.UpdateProductAsync(id, dto);
+            }
 
-        [HttpPatch("{id}/stock")]
-        [Authorize(Roles = "Seller")]
-        public async Task<ActionResult<ApiResponse<bool>>> UpdateStock(int id, [FromBody] int quantity)
-        {
-            return await _productService.UpdateStockAsync(id, quantity);
+            [HttpDelete("{id}")]
+            [Authorize(Roles = Constants.Roles.Seller)]
+            public async Task<ActionResult<ApiResponse<bool>>> DeleteProduct(int id)
+            {
+                return await _productService.DeleteProductAsync(id);
+            }
+
+            [HttpPatch("{id}/stock")]
+            [Authorize(Roles = Constants.Roles.Seller)]
+            public async Task<ActionResult<ApiResponse<bool>>> UpdateStock(int id, [FromBody] int quantity)
+            {
+                return await _productService.UpdateStockAsync(id, quantity);
+            }
         }
     }
-}

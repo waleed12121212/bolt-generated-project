@@ -8,6 +8,7 @@
     using System.Text;
     using Bazingo_Core.Entities.Identity;
     using Bazingo_Core;
+    using System;
 
     namespace Bazingo_Infrastructure.Identity
     {
@@ -54,10 +55,10 @@
                     ValidateIssuerSigningKey = jwtSettings.ValidateIssuerSigningKey ,
                     IssuerSigningKey = new SymmetricSecurityKey(key) ,
                     ValidateIssuer = jwtSettings.ValidateIssuer ,
-                    ValidAudience = jwtSettings.ValidAudience ,
-                    ValidateLifetime = jwtSettings.ValidateLifetime ,
+                    ValidateAudience = jwtSettings.ValidateAudience ,
                     ValidIssuer = jwtSettings.Issuer ,
                     ValidAudience = jwtSettings.Audience ,
+                    ValidateLifetime = jwtSettings.ValidateLifetime ,
                     ClockSkew = TimeSpan.FromMinutes(jwtSettings.ClockSkew)
                 };
 

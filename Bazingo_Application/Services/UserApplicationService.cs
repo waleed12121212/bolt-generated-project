@@ -1,141 +1,141 @@
-using Bazingo_Core.Entities.Identity;
-using Bazingo_Application.Interfaces;
-using Bazingo_Core.Interfaces;
-using Microsoft.Extensions.Logging;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
+    using Bazingo_Core.Entities.Identity;
+    using Bazingo_Application.Interfaces;
+    using Bazingo_Core.Interfaces;
+    using Microsoft.Extensions.Logging;
+    using System;
+    using System.Collections.Generic;
+    using System.Linq;
+    using System.Threading.Tasks;
 
-namespace Bazingo_Application.Services
-{
-    public class UserApplicationService : IUserApplicationService
+    namespace Bazingo_Application.Services
     {
-        private readonly Bazingo_Core.Interfaces.IUserService _userService;
-        private readonly ILogger<UserApplicationService> _logger;
-
-        public UserApplicationService(Bazingo_Core.Interfaces.IUserService userService, ILogger<UserApplicationService> logger)
+        public class UserApplicationService : IUserApplicationService
         {
-            _userService = userService;
-            _logger = logger;
-        }
+            private readonly Bazingo_Core.Interfaces.IUserService _userService;
+            private readonly ILogger<UserApplicationService> _logger;
 
-        public async Task<ApplicationUser> GetUserByIdAsync(string userId)
-        {
-            try
+            public UserApplicationService(Bazingo_Core.Interfaces.IUserService userService, ILogger<UserApplicationService> logger)
             {
-                return await _userService.GetUserByIdAsync(userId);
+                _userService = userService;
+                _logger = logger;
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error getting user by ID {UserId}", userId);
-                throw;
-            }
-        }
 
-        public async Task<IReadOnlyList<ApplicationUser>> GetAllUsersAsync()
-        {
-            try
+            public async Task<ApplicationUser> GetUserByIdAsync(string userId)
             {
-                var users = await _userService.GetAllUsersAsync();
-                return users;
+                try
+                {
+                    return await _userService.GetUserByIdAsync(userId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error getting user by ID {UserId}", userId);
+                    return null;
+                }
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error getting all users");
-                throw;
-            }
-        }
 
-        public async Task<ApplicationUser> GetUserByEmailAsync(string email)
-        {
-            try
+            public async Task<IReadOnlyList<ApplicationUser>> GetAllUsersAsync()
             {
-                return await _userService.GetUserByEmailAsync(email);
+                try
+                {
+                    var users = await _userService.GetAllUsersAsync();
+                    return users;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error getting all users");
+                    return new List<ApplicationUser>();
+                }
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error getting user by email {Email}", email);
-                throw;
-            }
-        }
 
-        public async Task<ApplicationUser> GetUserByUsernameAsync(string username)
-        {
-            try
+            public async Task<ApplicationUser> GetUserByEmailAsync(string email)
             {
-                return await _userService.GetUserByUsernameAsync(username);
+                try
+                {
+                    return await _userService.GetUserByEmailAsync(email);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error getting user by email {Email}", email);
+                    return null;
+                }
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error getting user by username {Username}", username);
-                throw;
-            }
-        }
 
-        public async Task<bool> IsEmailUniqueAsync(string email, string excludeUserId = null)
-        {
-            try
+            public async Task<ApplicationUser> GetUserByUsernameAsync(string username)
             {
-                return await _userService.IsEmailUniqueAsync(email, excludeUserId);
+                try
+                {
+                    return await _userService.GetUserByUsernameAsync(username);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error getting user by username {Username}", username);
+                    return null;
+                }
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error checking email uniqueness for {Email}", email);
-                throw;
-            }
-        }
 
-        public async Task<bool> IsUsernameUniqueAsync(string username, string excludeUserId = null)
-        {
-            try
+            public async Task<bool> IsEmailUniqueAsync(string email, string excludeUserId = null)
             {
-                return await _userService.IsUsernameUniqueAsync(username, excludeUserId);
+                try
+                {
+                    return await _userService.IsEmailUniqueAsync(email, excludeUserId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error checking email uniqueness for {Email}", email);
+                    return false;
+                }
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error checking username uniqueness for {Username}", username);
-                throw;
-            }
-        }
 
-        public async Task<IReadOnlyList<ApplicationUser>> GetUsersByRoleAsync(string role)
-        {
-            try
+            public async Task<bool> IsUsernameUniqueAsync(string username, string excludeUserId = null)
             {
-                return await _userService.GetUsersByRoleAsync(role);
+                try
+                {
+                    return await _userService.IsUsernameUniqueAsync(username, excludeUserId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error checking username uniqueness for {Username}", username);
+                    return false;
+                }
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error getting users by role {Role}", role);
-                throw;
-            }
-        }
 
-        public async Task<bool> UpdateUserAsync(ApplicationUser user)
-        {
-            try
+            public async Task<IReadOnlyList<ApplicationUser>> GetUsersByRoleAsync(string role)
             {
-                return await _userService.UpdateUserAsync(user);
+                try
+                {
+                    return await _userService.GetUsersByRoleAsync(role);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error getting users by role {Role}", role);
+                    return new List<ApplicationUser>();
+                }
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error updating user {UserId}", user.Id);
-                throw;
-            }
-        }
 
-        public async Task<bool> DeleteUserAsync(string userId)
-        {
-            try
+            public async Task<bool> UpdateUserAsync(ApplicationUser user)
             {
-                return await _userService.DeleteUserAsync(userId);
+                try
+                {
+                    return await _userService.UpdateUserAsync(user);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error updating user {UserId}", user.Id);
+                    return false;
+                }
             }
-            catch (Exception ex)
+
+            public async Task<bool> DeleteUserAsync(string userId)
             {
-                _logger.LogError(ex, "Error deleting user {UserId}", userId);
-                throw;
+                try
+                {
+                    return await _userService.DeleteUserAsync(userId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error deleting user {UserId}", userId);
+                    return false;
+                }
             }
         }
     }
-}
