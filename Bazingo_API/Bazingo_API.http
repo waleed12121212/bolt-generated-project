@@ -1,0 +1,6 @@
+@Bazingo_API_HostAddress = http://localhost:5034
+
+GET {{Bazingo_API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
